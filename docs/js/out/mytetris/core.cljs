@@ -43,7 +43,7 @@
    4   "rgb(0, 180, 0)"
    5   "rgb(130, 50, 0)"
    6   "rgb(0, 80, 180)"
-   7   "rgb(180, 30, 20)"
+   7   "rgb(0, 80, 0)"
    })
 
 (defn draw-block [ctx block x y cell-w cell-h]
@@ -57,22 +57,26 @@
                                  (* (+ row-index y) h)
                                  (- w 3 )
                                  (- h 3 )))
-
                    (map-indexed #(vector %1 %2) row))))]
-    (doall (map #(do
-                   (draw-row (% 1) (% 0) ctx cell-w cell-h))
-                (map-indexed #(vector %1 %2) block)))))
+    (doall
+     (map #(do
+             (draw-row (% 1) (% 0) ctx cell-w cell-h))
+          (map-indexed #(vector %1 %2) block)))))
 
 (defn draw-canvas-contents [canvas state]
   (let [ ctx (.getContext canvas "2d")
         field (state :field)
         block (state :current-block)
-        w (/ (.-clientWidth canvas) field-width)
-        h (/ (.-clientHeight canvas) field-height)
+        h (.-clientHeight canvas)
+        w (.-clientWidth canvas)
+        cell-w (/ w field-width )
+        cell-h (/ h field-height )
         ]
     (if (not (nil? block))
-      (draw-block ctx (set-block field block) 0 0 w h)
-      (draw-block ctx field 0 0 w h))))
+      (let [x (get-in block [:pos :x])
+            y (get-in block [:pos :y])
+            b (get-block-pattern block)]
+        (draw-block ctx (set-block field block) 0 0 cell-w cell-h)))))
 ;;; state handling
 (defn initialize-state [state]
   (swap! state #(identity %2) (make-initial-state))
@@ -85,8 +89,7 @@
                 "ArrowRight" (move-right b)
                 "ArrowLeft" (move-left b)
                 "ArrowUp" (rot-left b)
-                ;; "ArrowDown" (rot-right b)
-                "ArrowDown" (move-down b)
+                "ArrowDown" (rot-right b)
                 "Space" (move-down b)
                 nil))]
       (if (and
@@ -156,7 +159,7 @@
 ;; Views
 
 (defn game []
-  (let [state (r/atom (make-initial-state))
+  (let [state (r/atom initial-state)
         dom-node (r/atom nil)
         handler (key-down-handler dom-node state)
         ]
@@ -166,6 +169,9 @@
      (render-button "stop" #(stop-game state))
      [div-with-canvas dom-node state]]))
 
+;; ---------- event handlers on canvas
+(defn on-click [ev]
+  (.log js/console "xxxxx"))
 ;; -------------------------
 ;; Initialize app
 
@@ -173,7 +179,8 @@
   (r/render [game]
             (.getElementById js/document "app"))
   (.addEventListener js/window "resize" on-window-resize)
-  (let [canvas (.getElementById js/document "field")]))
+  (let [canvas (.getElementById js/document "field")]
+    (.addEventListener canvas "click" on-click)))
 
 (defn init! []
   (main))
@@ -289,6 +296,9 @@
       blocks
       (nth (:direction block))))
 
+(def b (generate-block))
+(def b2 (generate-block))
+
 ;;; 20(h) x 10(w)
 (def initial-field (vec  (repeat field-height (vec (repeat field-width 0)))))
 
@@ -335,6 +345,8 @@
         h (count pattern)
         end  (get-in b [:pos :y])
         start (- end h)
+        ;; start (:y (:pos b))
+        ;; end (+ (count pattern) start)
         targets (->> pattern
                      (interleave (range start end))
                      (partition 2)
@@ -342,6 +354,8 @@
     targets))
 ;; (set-line [0 0 0 0 0 5 0 0] [1 0 3] 4)
 ;; [0 0 0 0 1 5 3 0]
+;; (set-line [0 0 0 0 0] [1 2 3] -1)
+;; [2 3 0 0 0 0 0 0 0]
 
 (defn set-line [target data x]
   (letfn [(f [lis n]
@@ -364,6 +378,7 @@
 (defn rot-left [block]
   (assoc block :direction (mod (dec (:direction block))4)))
 
+;; (check-line [1 1 0 0 1 0 0 0 ] [2 0 0] 2)
 (defn check-line [target data x]
   (letfn [(f [lis]
             (not-every? #(> % 0) lis))
@@ -371,6 +386,7 @@
             (concat (repeat x 0) data))]
     (let [new-data (get-newdata x data)]
       (every? true?  (map f (partition 2 (interleave new-data target)))))))
+(not-every? #(> % 0)  [3 3])
 
 (defn can-move? [field block]
   (let [pattern (get-match-pattern block)
@@ -383,3 +399,14 @@
       (> y field-height) false ;; 一番下
       :else (let [r (map #(check-line (nth field (first %)) (second %) x) pattern)]
               (every? true? r)))))
+
+;; (def f [[0 0 0 0 ] [0 0 0 0 ] [0 0 0 0 ]])
+;; (def b (->Block 3 1 (->Pos 0 18)))
+;; (count (nth (get-block-pattern b)0))
+;; (can-move? initial-field b)
+
+(defn can-down? [field block]
+  (let [b (move-down block)]
+    (can-move? field b)))
+;; (can-move? (assoc initial-field 0 [1 1 1 1 1 1 1 1 1 ])  (assoc-in b2 [:pos :y] 4))
+;; (can-move? (assoc initial-field 1 [1 1 1 1 1 1 1 1 1 ])  (-> b2 move-down ))
