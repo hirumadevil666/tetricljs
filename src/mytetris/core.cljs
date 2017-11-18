@@ -30,6 +30,9 @@
        [:canvas#field (if-let [ node @dom-node ]
                         {:width (.-clientWidth node)
                          :height (.-clientHeight node)})]
+       [:canvas#next-block (if-let [ node @dom-node ]
+                             {:width (* 5 (/ (.-clientWidth node ) field-width ))
+                              :height (* 3 (/  (.-clientHeight node) field-height))})]
        ])}))
 
 (defn render-button [value on-click]
@@ -62,6 +65,13 @@
     (doall (map #(do
                    (draw-row (% 1) (% 0) ctx cell-w cell-h))
                 (map-indexed #(vector %1 %2) block)))))
+
+(defn draw-next-block [canvas block]
+  (let [ctx (.getContext canvas "2d")
+        f (repeat 2 (repeat 4 0))
+        ]
+    (draw-block ctx f 0 0 25 25 )
+    (draw-block ctx (get-block-pattern block) 0 0 25 25)))
 
 (defn draw-canvas-contents [canvas state]
   (let [ ctx (.getContext canvas "2d")
@@ -123,6 +133,7 @@
   (if-let [erased-field (erase-blocks (@state :field))]
     (swap! state assoc :field erased-field)
     (let [current-block (@state :current-block)
+          next-block (@state :next-block)
           field (@state :field)
           b (move-down current-block)]
       (if (can-move? field  b)
@@ -133,8 +144,12 @@
               ;; 最上段でない場合はブロック消去判定を実施,次のブロックを生成
               (do (let [new-field (set-block (@state :field) current-block)]
                     (swap! state assoc :field new-field))
-                  (swap! state assoc :current-block (generate-block))))))))
-  (draw-canvas-contents (.-firstChild @dom-node) @state))
+                  (swap! state assoc
+                         :current-block next-block
+                         :next-block (generate-block))))))))
+  (draw-canvas-contents (.-firstChild @dom-node) @state)
+  (if-let [next-block (@state :next-block)]
+    (draw-next-block (aget (.-childNodes @dom-node) 1) next-block)))
 
 (def initial-state {:field nil
                     :current-block nil
@@ -143,13 +158,16 @@
                     :interval 600
                     :interval-id nil
                     })
+
 (defn make-initial-state []
   (let [v (vec  (repeat field-height (vec (repeat field-width 0))))]
-    (assoc initial-state :field v)))
+    (assoc initial-state
+           :field v
+           :next-block (generate-block))))
 
 (defn stop-game [state]
   (stop-timer state)
-  (swap! state assoc :current-block nil)
+  (swap! state assoc :current-block nil :next-block nil)
   (.log js/console "stop block " (@state :current-block)))
 
 ;; -------------------------
