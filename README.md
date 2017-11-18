@@ -17,3 +17,6 @@ Once Figwheel starts up, you should be able to open the `public/index.html` page
 lein clean
 lein package
 ```
+### DEMO
+
+https://hirumadevil666.github.io/tetricljs/
