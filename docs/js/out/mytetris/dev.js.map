@@ -1,1 +1,0 @@
-{"version":3,"file":"\/Users\/hhz%201\/projects\/mytetris\/public\/js\/out\/mytetris\/dev.js","sources":["dev.cljs?rel=1510936791254"],"lineCount":10,"mappings":";AAAA;;;;AAMA,AAACA;AAED,AAACC;AAED,AAACC","names":["cljs.core\/enable-console-print!","devtools.core\/install!","mytetris.core\/init!"]}
