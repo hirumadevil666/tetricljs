@@ -110,11 +110,14 @@
                   (swap! state assoc :current-block new-block)
                   (draw-canvas-contents (.-firstChild @dom-node) @state))))))))
 
+(defn set-timer [dom-node state]
+  (let [interval-id (.setTimeout js/window main-loop (@state :interval) dom-node  state)]
+    (swap! state assoc :interval-id interval-id)))
+
 (defn set-main-loop [dom-node state handler]
   (swap! state assoc :current-block (generate-block))
   (.addEventListener js/window "keydown" handler)
-  (let [interval-id (.setInterval js/window main-loop (@state :interval) dom-node  state)]
-    (swap! state assoc :interval-id interval-id)))
+  (set-timer dom-node state))
 
 (defn stop-timer [state]
   (let [interval-id (:interval-id @state)]
@@ -129,24 +132,36 @@
     true
     false))
 
+(defn get-new-interval [current-interval min-interval count]
+  (if (zero? (mod count 20))
+    (max min-interval (- current-interval 50) )  ; dec 50 milisec
+    current-interval))
+
 (defn main-loop [dom-node state]
   (if-let [erased-field (erase-blocks (@state :field))]
-    (swap! state assoc :field erased-field)
+    (do (swap! state assoc :field erased-field)
+        (set-timer dom-node state))
     (let [current-block (@state :current-block)
           next-block (@state :next-block)
           field (@state :field)
           b (move-down current-block)]
       (if (can-move? field  b)
-        (swap! state assoc :current-block b)
+        (do (swap! state assoc :current-block b)
+            (set-timer dom-node state))
         ;; 下に移動できないかつ、最上段 なのでgame over
         (do (if (top-of-field? current-block)
               (stop-game state)
               ;; 最上段でない場合はブロック消去判定を実施,次のブロックを生成
-              (do (let [new-field (set-block (@state :field) current-block)]
-                    (swap! state assoc :field new-field))
-                  (swap! state assoc
-                         :current-block next-block
-                         :next-block (generate-block))))))))
+              (do (let [new-field (set-block (@state :field) current-block)
+                        c (inc (@state :count))
+                        interval (get-new-interval  (@state :interval) (@state :min-inteval) c) ]
+                    (swap! state assoc
+                           :field new-field
+                           :current-block next-block
+                           :next-block (generate-block)
+                           :interval interval
+                           :count c))
+                  (set-timer dom-node state)))))))
   (draw-canvas-contents (.-firstChild @dom-node) @state)
   (if-let [next-block (@state :next-block)]
     (draw-next-block (aget (.-childNodes @dom-node) 1) next-block)))
@@ -157,6 +172,8 @@
                     :score 0
                     :interval 600
                     :interval-id nil
+                    :min-inteval 100
+                    :count 0
                     })
 
 (defn make-initial-state []
