@@ -2,8 +2,10 @@
   (:require
    [reagent.core :as r]))
 
-(declare rot-left rot-right move-left move-right move-down set-line draw-canvas-contents initial-field initial-state generate-block state main-loop blocks can-move?)
+(declare rot-left rot-right move-left move-right move-down  set-line draw-canvas-contents initial-field initial-state generate-block state main-loop can-move? move-block)
 (declare set-block erase-blocks render-button stop-game stop-timer field-width field-height make-initial-state get-block-pattern key-down)
+(declare blocks  ->Block ->Pos select-block-index rot-left-internal)
+
 ;; Canvas settings
 ;; Views
 (def window-width (r/atom nil))
@@ -39,14 +41,15 @@
   [:button.squre {:on-click on-click} value])
 
 (def color-map
-  {0  "rgb(180, 180, 180)"
-   1  "rgb(50, 30, 100)"
-   2   "rgb(0, 180, 180)"
-   3   "rgb(180, 0, 180)"
-   4   "rgb(0, 180, 0)"
-   5   "rgb(130, 50, 0)"
-   6   "rgb(0, 80, 180)"
-   7   "rgb(180, 30, 20)"
+  {0 "rgb(180, 180, 180)"
+   1 "rgb(50, 30, 100)"
+   2 "rgb(0, 180, 180)"
+   3 "rgb(180, 0, 180)"
+   4 "rgb(0, 180, 0)"
+   5 "rgb(130, 50, 0)"
+   6 "rgb(0, 80, 180)"
+   7 "rgb(180, 30, 20)"
+   8 "rgb(100, 50, 20)"
    })
 
 (defn draw-block [ctx block x y cell-w cell-h]
@@ -58,31 +61,29 @@
                       (.fillRect ctx
                                  (* (+ (% 0) x) w )
                                  (* (+ row-index y) h)
-                                 (- w 3 )
-                                 (- h 3 )))
-
-                   (map-indexed #(vector %1 %2) row))))]
+                                 (- w 3)
+                                 (- h 3)))
+                   (map-indexed vector row))))]
     (doall (map #(do
                    (draw-row (% 1) (% 0) ctx cell-w cell-h))
-                (map-indexed #(vector %1 %2) block)))))
+                (map-indexed vector block)))))
 
 (defn draw-next-block [canvas block]
   (let [ctx (.getContext canvas "2d")
-        f (repeat 2 (repeat 4 0))
-        ]
-    (draw-block ctx f 0 0 25 25 )
-    (draw-block ctx (get-block-pattern block) 0 0 25 25)))
+        b (move-block block -3 1)
+        f (vec (repeat 2 (vec (repeat 4 0))))]
+    (draw-block ctx (set-block f b) 0 0 25 25)))
 
 (defn draw-canvas-contents [canvas state]
   (let [ ctx (.getContext canvas "2d")
         field (state :field)
         block (state :current-block)
         w (/ (.-clientWidth canvas) field-width)
-        h (/ (.-clientHeight canvas) field-height)
-        ]
+        h (/ (.-clientHeight canvas) field-height) ]
     (if (not (nil? block))
       (draw-block ctx (set-block field block) 0 0 w h)
       (draw-block ctx field 0 0 w h))))
+
 ;;; state handling
 (defn initialize-state [state]
   (swap! state #(identity %2) (make-initial-state))
@@ -95,8 +96,8 @@
                 "ArrowRight" (move-right b)
                 "ArrowLeft" (move-left b)
                 "ArrowUp" (rot-left b)
-                ;; "ArrowDown" (rot-right b)
-                "ArrowDown" (move-down b)
+                "ArrowDown" (rot-right b)
+                ;; "ArrowDown" (move-down b)
                 "Space" (move-down b)
                 nil))]
       (if (and
@@ -105,7 +106,7 @@
         (let [new-block (get-new-block ev (@state :current-block))
               field (@state :field)]
           (cond (nil? new-block) nil
-                (can-move? field new-block)
+                (can-move? field (get-block-pattern new-block))
                 (do
                   (swap! state assoc :current-block new-block)
                   (draw-canvas-contents (.-firstChild @dom-node) @state))))))))
@@ -138,6 +139,7 @@
     current-interval))
 
 (defn main-loop [dom-node state]
+  (print (:current-block @state))
   (if-let [erased-field (erase-blocks (@state :field))]
     (do (swap! state assoc :field erased-field)
         (set-timer dom-node state))
@@ -145,12 +147,14 @@
           next-block (@state :next-block)
           field (@state :field)
           b (move-down current-block)]
-      (if (can-move? field  b)
+      (if (can-move? field  (get-block-pattern b))
         (do (swap! state assoc :current-block b)
             (set-timer dom-node state))
-        ;; 下に移動できないかつ、最上段 なのでgame over
         (do (if (top-of-field? current-block)
-              (stop-game state)
+              ;; 下に移動できないかつ、最上段 なのでgame over
+              (do
+                (swap! state update-in [:field] #(set-block % current-block))
+                (stop-game state))
               ;; 最上段でない場合はブロック消去判定を実施,次のブロックを生成
               (do (let [new-field (set-block (@state :field) current-block)
                         c (inc (@state :count))
@@ -189,6 +193,13 @@
 
 ;; -------------------------
 ;; Views
+(defn usage []
+  [:div
+   [:div "↑ rotate right"]
+   [:div "↓ rotate left"]
+   [:div "→ right"]
+   [:div "← left"]
+   [:div "space  down"]])
 
 (defn game []
   (let [state (r/atom (make-initial-state))
@@ -199,7 +210,8 @@
      (render-button "start" #(if (nil? (@state :current-block))
                                (do (initialize-state state) (set-main-loop dom-node state handler))))
      (render-button "stop" #(stop-game state))
-     [div-with-canvas dom-node state]]))
+     [div-with-canvas dom-node state]
+     ]))
 
 ;; -------------------------
 ;; Initialize app
@@ -214,118 +226,54 @@
   (main))
 ;; -------------------------
 ;; Tetris logic
+;;
+(def blocks
+  [[[-1 0] [0 0] [1 0] [0 -1]] ;; I
+   [[-1 0] [0 0] [1, 0] [2 0]] ;; O
+   [[0, -1] [1 -1] [0 0] [1 0]] ;; S
+   [[-1 0] [0 0] [0 -1] [1 -1]] ;; Z
+   [[-1 -1] [0 -1] [0 0]  [1 0]] ;; L
+   [[1 -1] [-1 0] [0 0] [1 0]] ;; J
+   [[-1 -1] [-1 0] [0 0] [1 0]]])
 
-(def block0
-  [[[1,1,1],
-    [0,1,0]],
-   [[0,1],
-    [1,1],
-    [0,1]],
-   [[0,1,0],
-    [1,1,1]],
-   [[1,0],
-    [1,1],
-    [1,0]]
-   ])
+;;;
+;;; [x y] の配列を90左回転させる
+;;; (rot-left-internal [[0 0] [0 1] [1 0] [1 1]]) [[0 0] [1 0] [0 -1] [1 -1]]
+;;;
+(defn rot-left-internal [b]
+  (mapv #(vector (% 1) (- (% 0))) b))
 
-(def block1
-  [[[2,2,2],
-    [0,0,2]],
-   [[0,2],
-    [0,2],
-    [2,2]],
-   [[2,0,0],
-    [2,2,2]],
-   [[2,2],
-    [2,0],
-    [2,0]]
-   ])
+(defn rot-left [block]
+  (let [{pattern :pattern type :type} block]
+    (if-not (= type 2)
+      (assoc block :pattern (rot-left-internal pattern)))))
 
-(def block2
-  [[[3,3,3],
-    [3,0,0]],
-   [[3,3],
-    [0,3],
-    [0,3]],
-   [[0,0,3],
-    [3,3,3]],
-   [[3,0],
-    [3,0],
-    [3,3]]])
+(defn rot-right-internal [b]
+  (mapv #(vector (- (% 1)) (% 0)) b))
 
-(def block3
-  [[[4,4,0],
-    [0,4,4]],
-   [[0,4],
-    [4,4],
-    [4,0]],
-   [[4,4,0],
-    [0,4,4]],
-   [[0,4],
-    [4,4],
-    [4,0]]])
-
-(def block4
-  [[[0,5,5],
-    [5,5,0]],
-   [[5,0],
-    [5,5],
-    [0,5]],
-   [[0,5,5],
-    [5,5,0]],
-   [[5,0],
-    [5,5],
-    [0,5]]])
-
-(def block5
-  [[[6,1],
-    [1,6]],
-   [[1,6],
-    [6,1]],
-   [[6,1],
-    [1,6]],
-   [[1,6],
-    [6,1]]])
-
-(def block6
-  [[[7,7,7,7]],
-   [[7],
-    [7],
-    [7],
-    [7]],
-   [[7,7,7,7]],
-   [[7],
-    [7],
-    [7],
-    [7]]
-   ])
+(defn rot-right [block]
+  (let [{pattern :pattern type :type} block]
+    (if-not (= type 2)
+      (assoc block :pattern (rot-right-internal pattern)))))
 
 (def field-width 10)
 (def field-height 20)
-(def blocks [block0 block1 block2 block3 block4 block5 block6])
 
 (def select-block-index
   (let [c (count blocks)]
     #(rand-int c)))
 
 (defrecord Pos [x y])
-(defrecord Block [type direction pos])
+(defrecord Block [type pattern pos])
 
 (defn generate-block []
   (let [i (select-block-index)
-        dir 0
         x 4
         y 0]
-    (->Block i dir (->Pos x y))))
-
-(defn get-block-pattern [block]
-  (-> block
-      :type
-      blocks
-      (nth (:direction block))))
+    (->Block i (blocks i) (->Pos x y))))
 
 ;;; 20(h) x 10(w)
-(def initial-field (vec  (repeat field-height (vec (repeat field-width 0)))))
+(def initial-field (vec (repeat field-height (vec (repeat field-width 0)))))
 
 (defn unerase-line? [l]
   (not-every? #(>= % 1) l))
@@ -333,7 +281,7 @@
 (defn get-store-candidate
   "消さないブロックのインデクスのシーケンスを返す"
   [field]
-  (let [ indexed-field (map-indexed #(vector %1 %2) field)]
+  (let [ indexed-field (map-indexed vector field)]
     (->> indexed-field
          (filter #(unerase-line? (second %)))
          (map first)
@@ -346,13 +294,14 @@
   (let [store-lines (get-store-candidate field)
         c (- field-height  (count store-lines))]
     (if (> c 0)
-      (let [clean-field (repeat c (repeat field-width 0))
+      (let [clean-field (repeat c (vec  (repeat field-width 0)))
             deleted-field (replace field store-lines)]
         (apply vector  (concat clean-field deleted-field)))
       nil)))
 
-(defn move-block [block x y]
-  (let [p (->Pos (+ x (:x(:pos block))) (+ (:y (:pos block)) y))]
+(defn move-block [block dx dy]
+  (let [{x :x y :y } (:pos block)
+        p (->Pos (+ x dx) (+ y dy))]
     (assoc block :pos p)))
 
 (defn move-left [block]
@@ -364,57 +313,43 @@
 (defn move-down [block]
   (move-block block 0 1))
 
-(defn get-match-pattern [b]
-  "フィールド内に含まれるブロックを位置と組み合わせて返す"
-  (let [pattern (get-block-pattern b)
-        h (count pattern)
-        end  (get-in b [:pos :y])
-        start (- end h)
-        targets (->> pattern
-                     (interleave (range start end))
-                     (partition 2)
-                     (filter #(<= 0 (first %))))]
-    targets))
-;; (set-line [0 0 0 0 0 5 0 0] [1 0 3] 4)
-;; [0 0 0 0 1 5 3 0]
+;; ブロックのセル毎の座標のvector返す
+;; (let [b (->Block 0 (blocks 0)  (->Pos 0 0))]
+;;   (let [b2 (move-down b)]
+;;     (get-block-pattern b2)))
+;; [[-1 1] [0 1] [1 1] [0 0]]
 
-(defn set-line [target data x]
-  (letfn [(f [lis n]
-            (concat (repeat n 0 ) lis (repeat field-width 0))
-            )]
-    (apply vector
-           (map #(apply max %)  (partition 2 (interleave target (f data x)))))))
+(defn get-block-pattern[block]
+  (let [{dx :x dy :y} (:pos block)
+        block-pattern (:pattern block) ]
+    (mapv #(vector (+ (% 0) dx) (+ (% 1) dy)) block-pattern)))
 
+;;; return new field
 (defn set-block [field block]
-  (let [pattern (get-match-pattern block)
-        key (map first pattern)
-        x (get-in block [:pos :x])
-        new-lines (map #(set-line (nth field (first %)) (second %) x) pattern)]
-    (if (not (empty? key))
-      (apply assoc field (interleave key new-lines)))))
+  (let [pattern (get-block-pattern block)
+        color   (inc  (:type block))
+        valid-pattern (filter #(>= (% 1) 0) pattern)]
+    (print field)
+    (reduce #(assoc-in %1 [(%2 1) (%2 0)] color) field valid-pattern)))
+;; (reduce #(assoc-in %1 %2 3)
+;;         [[0 0 0] [0 0 0]]
+;;         [[0 0] [0 1]])
+;; (in-field? [[0 0 0] [0 0 0]] 0 0) t
+;; (in-field? [[0 0 0] [1 0 0]] 0 1) f
+;; (in-field? [[0 0 0] [1 0 0]] 1 1) t
+(defn in-field? [f x y]
+  (and (>= x 0)
+       (< x field-width)
+       (< y field-height)
+       (zero? ((f y) x))))
+;; true, flase
+;; (let [f [[0 0 0 0]
+;;          [0 1 1 0]
+;;          [1 1 0 0]]
+;;       p0 [[0 0] [0 1]]
+;;       p1 [[1 1] [1 1]]]
+;;   (map #(can-move? f %) (list p0 p1)))
 
-(defn rot-right [block]
-  (assoc block :direction (mod (inc (:direction block))4)))
-
-(defn rot-left [block]
-  (assoc block :direction (mod (dec (:direction block))4)))
-
-(defn check-line [target data x]
-  (letfn [(f [lis]
-            (not-every? #(> % 0) lis))
-          (get-newdata [x data]
-            (concat (repeat x 0) data))]
-    (let [new-data (get-newdata x data)]
-      (every? true?  (map f (partition 2 (interleave new-data target)))))))
-
-(defn can-move? [field block]
-  (let [pattern (get-match-pattern block)
-        bp (get-block-pattern block)
-        x (get-in block [:pos :x])
-        y (get-in block [:pos :y])]
-    (cond
-      (< x 0) false
-      (> (+  x (count (bp 0))) field-width) false ;右端
-      (> y field-height) false ;; 一番下
-      :else (let [r (map #(check-line (nth field (first %)) (second %) x) pattern)]
-              (every? true? r)))))
+(defn can-move? [field pattern]
+  (let [p (filter #(>= (% 1) 0) pattern)]
+    (every? true? (map  #(apply in-field? field %) p))))
