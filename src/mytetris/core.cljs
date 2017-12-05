@@ -138,9 +138,17 @@
     (max min-interval (- current-interval 50) )  ; dec 50 milisec
     current-interval))
 
+(defn score [l]
+  (case l
+    1 10
+    2 100
+    3 500
+    4 1000))
 (defn main-loop [dom-node state]
-  (if-let [erased-field (erase-blocks (@state :field))]
+  (if-let [[erased-field erased-count] (erase-blocks (@state :field))]
     (do (swap! state assoc :field erased-field)
+        (swap! state update-in [:erased-lines] + erased-count)
+        (swap! state update-in [:score] +  (score erased-count))
         (set-timer dom-node state))
     (let [current-block (@state :current-block)
           next-block (@state :next-block)
@@ -177,6 +185,7 @@
                     :interval-id nil
                     :min-inteval 100
                     :count 0
+                    :erased-lines 0
                     })
 
 (defn make-initial-state []
@@ -295,7 +304,7 @@
     (if (> c 0)
       (let [clean-field (repeat c (vec  (repeat field-width 0)))
             deleted-field (replace field store-lines)]
-        (apply vector  (concat clean-field deleted-field)))
+        [(apply vector  (concat clean-field deleted-field)) c])
       nil)))
 
 (defn move-block [block dx dy]
