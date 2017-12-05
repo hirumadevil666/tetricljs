@@ -139,7 +139,6 @@
     current-interval))
 
 (defn main-loop [dom-node state]
-  (print (:current-block @state))
   (if-let [erased-field (erase-blocks (@state :field))]
     (do (swap! state assoc :field erased-field)
         (set-timer dom-node state))
@@ -329,7 +328,6 @@
   (let [pattern (get-block-pattern block)
         color   (inc  (:type block))
         valid-pattern (filter #(>= (% 1) 0) pattern)]
-    (print field)
     (reduce #(assoc-in %1 [(%2 1) (%2 0)] color) field valid-pattern)))
 ;; (reduce #(assoc-in %1 %2 3)
 ;;         [[0 0 0] [0 0 0]]
