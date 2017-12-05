@@ -4,7 +4,7 @@
 
 (declare rot-left rot-right move-left move-right move-down  set-line draw-canvas-contents initial-field initial-state generate-block state main-loop can-move? move-block)
 (declare set-block erase-blocks render-button stop-game stop-timer field-width field-height make-initial-state get-block-pattern key-down)
-(declare blocks  ->Block ->Pos select-block-index rot-left-internal)
+(declare blocks  ->Block ->Pos select-block-index rot-left-internal usage score-field draw-next-block)
 
 ;; Canvas settings
 ;; Views
@@ -16,7 +16,8 @@
   (r/create-class
    {:component-did-update
     (fn [ this ]
-      (draw-canvas-contents (.-firstChild @dom-node) @state))
+      (do
+        (draw-canvas-contents (.getElementById js/document "field") @state)))
 
     :component-did-mount
     (fn [ this ]
@@ -29,13 +30,35 @@
        ;; reagent-render is called before the compoment mounts, so
        ;; protect against the null dom-node that occurs on the first
        ;; render
-       [:canvas#field (if-let [ node @dom-node ]
-                        {:width (.-clientWidth node)
-                         :height (.-clientHeight node)})]
-       [:canvas#next-block (if-let [ node @dom-node ]
-                             {:width (* 5 (/ (.-clientWidth node ) field-width ))
-                              :height (* 3 (/  (.-clientHeight node) field-height))})]
+       [:div.left
+        [:canvas#field (if-let [ node @dom-node ]
+                         {:width (.-clientWidth node)
+                          :height (.-clientHeight node)})]]
+       [:div.right
+        [:canvas#next-block (if-let [ node @dom-node ]
+                              {:width (* 5 (/ (.-clientWidth node ) field-width ))
+                               :height (* 3 (/  (.-clientHeight node) field-height))})]
+        [usage]
+        [score-field state]]
        ])}))
+
+(defn score-field [state]
+  (r/create-class
+   {
+    :component-did-update
+    (fn [this] nil)
+    :component-did-mount
+    (fn [this] nil)
+
+    :reagent-render
+    (fn []
+      [:div.score-field
+       [:div.erased "erased " (@state :erased-lines)]
+       [:div.score "score " (@state :score)]
+       [:div.high-score "high-score NOT IMPLEMENTED"]
+       ]
+      )}))
+
 
 (defn render-button [value on-click]
   [:button.squre {:on-click on-click} value])
@@ -109,7 +132,7 @@
                 (can-move? field (get-block-pattern new-block))
                 (do
                   (swap! state assoc :current-block new-block)
-                  (draw-canvas-contents (.-firstChild @dom-node) @state))))))))
+                  (draw-canvas-contents (.getElementById js/document "field" ) @state))))))))
 
 (defn set-timer [dom-node state]
   (let [interval-id (.setTimeout js/window main-loop (@state :interval) dom-node  state)]
@@ -173,9 +196,9 @@
                            :interval interval
                            :count c))
                   (set-timer dom-node state)))))))
-  (draw-canvas-contents (.-firstChild @dom-node) @state)
+  (draw-canvas-contents (.getElementById js/document "field" ) @state)
   (if-let [next-block (@state :next-block)]
-    (draw-next-block (aget (.-childNodes @dom-node) 1) next-block)))
+    (draw-next-block (.getElementById js/document "next-block") next-block)))
 
 (def initial-state {:field nil
                     :current-block nil
@@ -202,12 +225,13 @@
 ;; -------------------------
 ;; Views
 (defn usage []
-  [:div
+  [:div.usage "usage"
    [:div "↑ rotate right"]
    [:div "↓ rotate left"]
    [:div "→ right"]
    [:div "← left"]
    [:div "space  down"]])
+
 
 (defn game []
   (let [state (r/atom (make-initial-state))
