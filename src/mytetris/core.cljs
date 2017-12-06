@@ -55,7 +55,6 @@
       [:div.score-field
        [:div.erased "erased " (@state :erased-lines)]
        [:div.score "score " (@state :score)]
-       [:div.high-score "high-score NOT IMPLEMENTED"]
        ]
       )}))
 
@@ -228,8 +227,8 @@
   [:div.usage "usage"
    [:div "↑ rotate right"]
    [:div "↓ rotate left"]
-   [:div "→ right"]
-   [:div "← left"]
+   [:div "→ move right"]
+   [:div "← move left"]
    [:div "space  down"]])
 
 
